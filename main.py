@@ -43,25 +43,33 @@ def main():
 
     root.mainloop()
 
+#функция сортирует по нажатию убыв и возрастание в таблице отедльного окна, где данные
+#количество общих друзей - пользователь
+def sort(col, reverse, tree):
+    tree_rev = tree
+    # получаем все значения столбцов в виде отдельного списка
+    l = [(tree.set(k, col), k) for k in tree.get_children("")]
+    # сортируем список
+    l.sort(reverse = not reverse)
+    # переупорядочиваем значения в отсортированном порядке
+    for index,  (_, k) in enumerate(l):
+        tree.move(k, "", index)
+
+#функция проверки, если id пользователя не ввели, то дальше на поиск не пропускаем
 def val_atr(root, txtID, vk_token, progressBar):
     if len(txtID.get()) != 0:
         click_search(root, txtID, vk_token, progressBar)
     else:
         messagebox.showinfo("Ошибка", "ID пользователя не введено!")
 
+#если id пользователя введено, получаем главное окно, данные id, токен вк и полосу прогресса
+#затем осуществляем поиск друзей и построения социального графа
 def click_search(root, txtID, vk_token, progressBar):
-    #создаем чистый список, в который запишем число связей с другими аккаунтами и сам id пользователя
-    sort_list = []
-    # получаем список друзей в ОК
-    #okauth = auth.ok_authorization()
-    #res = okauth.friends.get(fid='97703521530')
-    #print(len(res.json()))
-
     #создадим и очистим граф
     G = nx.Graph()
     G.clear()
 
-    # получаем список друзей в ВК
+    #получаем список друзей в ВК
     t = 0.35
     user_1 = txtID.get()
     vktoken = vk_token.get_vk_token()
@@ -69,14 +77,13 @@ def click_search(root, txtID, vk_token, progressBar):
     #получим id пользователя и проверим есть ли такой в соц. сети
     data = vk('users.get', ['user_id=%s' % user_1, 'v=5.89'], vktoken)['response']
     time.sleep(t)
-    # если id есть строим граф, иначе выводим сообщение о том что пользователь не найден
+    #если id есть строим граф, иначе выводим сообщение о том что пользователь не найден
     if len(data) != 0:
         if data[0]['is_closed']:
             messagebox.showinfo("Ошибка", "Аккаунт пользователя скрыт настройками приватности!")
         else:
             friends_1 = list(vk('friends.get', ['user_id=%s' % user_1, 'order=hints', 'count=900', 'v=5.89'],
                           vktoken)['response']['items'])
-            #print(friends_1)
             time.sleep(t)
             G.add_node(user_1)
             progressBar.configure(maximum=len(friends_1))
@@ -89,26 +96,20 @@ def click_search(root, txtID, vk_token, progressBar):
                 #обновили главное окно и переходим к обработке данных
                 data = vk('users.get', ['user_id=%s' % friends_1[i], 'v=5.89'], vktoken)
                 time.sleep(t)
-                #print(data)
                 friends_closed = data['response'][0]['is_closed']
+                id_friends_add_table = friends_1[i]
+                number_mutual_friends_add_table = 0
                 if data['response'][0].get('deactivated') != 'deleted' and data['response'][0].get('deactivated') != 'banned':
                     if not friends_closed:
                         mutual_friends = vk('friends.getMutual', ['source_uid=%s' % user_1, 'order=hints',
                                                                     'target_uid=%s' % friends_1[i], 'v=5.89'], vktoken)['response']
                         #добавляем в список данные количество общих друзей - id друга
-                        sort_list.append([len(mutual_friends), friends_1[i]])
                         for x in range(len(mutual_friends)):
-                            #print(mutual_friends[x])
                             G.add_node(mutual_friends[x])
                             G.add_edge(user_1, mutual_friends[x])
                             G.add_edge(friends_1[i], mutual_friends[x])
-                            #G.nodes()
-                            #G.edges()
-                    #else:
-                        #print('YES is closed')
+                            number_mutual_friends_add_table += 1
                     time.sleep(t)
-                #else:
-                    #print('YES is banned or deleted')
 
             # Создаем и добавляем граф в окно
             fig, ax = plt.subplots()
@@ -124,26 +125,28 @@ def click_search(root, txtID, vk_token, progressBar):
             toolbar.update()
             toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
-            # сортируем список друг - количество общих друзей в порядке убывания
-            reverse_sort_list = sorted(sort_list, reverse=True)
             #создадим новое окно и запишем в него данные количество общих друзей - id друга
             window = tk.Tk()
             window.title("Количество общих друзей")
-            window.geometry("250x200")
+            window.geometry("250x230")
 
             table_frame = Frame(window)
             table_frame.pack()
             data_table = ttk.Treeview(table_frame)
             data_table['columns'] = ('number_of_mutual_friends', 'id_friend')
             data_table.column("#0", width=0, stretch=NO)
-            data_table.column("number_of_mutual_friends", anchor=CENTER, width=80)
-            data_table.column("id_friend", anchor=CENTER, width=160)
-            data_table.heading("#0", text="", anchor=CENTER)
-            data_table.heading("number_of_mutual_friends", text="number_of_mutual_friends", anchor=CENTER)
+            data_table.column("number_of_mutual_friends", anchor=CENTER, width=160)
+            data_table.column("id_friend", anchor=CENTER, width=80)
+            data_table.heading("number_of_mutual_friends", text="number_of_mutual_friends", anchor=CENTER, command=lambda: sort(0, False, data_table))
             data_table.heading("id_friend", text="id_friend", anchor=CENTER)
-            for x in range(len(reverse_sort_list)):
-                data_table.insert(parent='', index='end', iid=x, text='',
-                                  values=(reverse_sort_list[x][0], reverse_sort_list[x][1]))
+            #проходим по всем дпользователем и считаем количество связей каждого
+            #начнем с 1 элемента а не с 0, так как первый - это сам пользователь, использовал легковестный костыль
+            step_user=0
+            for x in G:
+                if step_user > 0:
+                    data_table.insert(parent='', index='end', iid=x, text='',
+                                      values=(len(G.edges(x)), x))
+                step_user = 1
             scrollbar = ttk.Scrollbar(orient="vertical", command=data_table.yview)
             scrollbar.pack(side=RIGHT, fill=Y)
             data_table["yscrollcommand"] = scrollbar.set
