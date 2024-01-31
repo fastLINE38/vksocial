@@ -1,0 +1,1 @@
+pyinstaller -F -w --icon=icon\docx.ico main.py
